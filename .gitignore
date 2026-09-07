@@ -1,0 +1,42 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# ─── Environment ──────────────────────────────────────────────────────────────
+.env
+*.env
+
+# ─── Database ─────────────────────────────────────────────────────────────────
+data/faceattend.db
+data/*.db
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Models (large binary files, re-downloadable via download_models.py) ────
+models/*.caffemodel
+models/*.pb
+models/*.prototxt
+models/*.onnx
+models/*.bin
+
+# ─── Privacy: no face images should ever be committed ─────────────────────────
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.webp
+
+# ─── IDE / tooling ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Attendance Records{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Attendance Records</h1>
+    <p>Search, filter and export the attendance history.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn" id="btn-export" type="button">&#11015; Export CSV</button>
+  </div>
+</div>
+
+<div class="filter-bar card" style="border:none;padding:0">
+  <div class="field" style="margin:0">
+    <label for="q">Search name / ID</label>
+    <input type="search" id="q" placeholder="Search records...">
+  </div>
+  <div class="field" style="margin:0">
+    <label for="date">Date</label>
+    <select id="date"><option value="">All dates</option></select>
+  </div>
+  <div class="field" style="margin:0">
+    <label for="person">Person</label>
+    <select id="person"><option value="">All people</option></select>
+  </div>
+  <div class="field" style="margin:0">
+    <label for="status">Status</label>
+    <select id="status">
+      <option value="">All</option>
+      <option value="present">Present</option>
+    </select>
+  </div>
+  <div class="page-actions" style="margin:0">
+    <button class="btn" id="btn-reset" type="button">Reset</button>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr><th>Name</th><th>ID</th><th>Date</th><th>Time</th>
+        <th>Confidence</th><th>Status</th></tr>
+    </thead>
+    <tbody id="records-body"></tbody>
+  </table>
+  <div class="empty hidden" id="records-empty">No records match your filters.</div>
+</div>
+
+<div class="pager">
+  <span id="page-info">-</span>
+  <span class="sp">
+    <button class="btn small" id="page-prev" type="button">&larr; Newer</button>
+    <button class="btn small" id="page-next" type="button">Older &rarr;</button>
+  </span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const state = { q: "", date: "", person: "", status: "", offset: 0, limit: 50 };
+
+  function currentQuery() {
+    state.q = $("#q").value.trim();
+    state.date = $("#date").value;
+    state.person = $("#person").value;
+    state.status = $("#status").value;
+  }
+
+  async function loadRecords() {
+    currentQuery();
+    const p = new URLSearchParams({ limit: state.limit, offset: state.offset });
+    if (state.q) p.set("q", state.q);
+    if (state.date) p.set("date", state.date);
+    if (state.person) p.set("person", state.person);
+    if (state.status) p.set("status", state.status);
+    try {
+      const data = await fetchJSON("/api/records?" + p.toString());
+      const body = $("#records-body");
+      body.innerHTML = "";
+      if (!data.records.length) {
+        $("#records-empty").classList.remove("hidden");
+      } else {
+        $("#records-empty").classList.add("hidden");
+        for (const r of data.records) {
+          const conf = Math.round(r.confidence * 100) + "%";
+          body.insertAdjacentHTML("beforeend",
+            `<tr>
+              <td>${esc(r.name)}</td>
+              <td class="mono muted">${esc(r.code)}</td>
+              <td class="mono">${esc(r.date)}</td>
+              <td class="mono">${esc(r.time)}</td>
+              <td class="conf">${conf}</td>
+              <td><span class="badge green">Present</span></td>
+            </tr>`);
+        }
+      }
+      const from = data.total ? data.offset + 1 : 0;
+      const to = Math.min(data.total, data.offset + data.records.length);
+      $("#page-info").textContent = `Showing ${from}-${to} of ${data.total} records`;
+      $("#page-prev").disabled = data.offset === 0;
+      $("#page-next").disabled = data.offset + data.limit >= data.total;
+    } catch (e) { toast(e.message, "error"); }
+  }
+
+  async function loadMeta() {
+    try {
+      const meta = await fetchJSON("/api/records/meta");
+      const dsel = $("#date");
+      dsel.innerHTML = '<option value="">All dates</option>';
+      for (const d of meta.dates)
+        dsel.insertAdjacentHTML("beforeend",
+          `<option value="${esc(d)}">${esc(d)}</option>`);
+      const psel = $("#person");
+      psel.innerHTML = '<option value="">All people</option>';
+      for (const p of meta.people)
+        psel.insertAdjacentHTML("beforeend",
+          `<option value="${p.id}">${esc(p.name)} (${esc(p.code)})</option>`);
+    } catch (e) { toast(e.message, "error"); }
+  }
+
+  function exportCsv() {
+    currentQuery();
+    const p = new URLSearchParams();
+    if (state.q) p.set("q", state.q);
+    if (state.date) p.set("date", state.date);
+    if (state.person) p.set("person", state.person);
+    if (state.status) p.set("status", state.status);
+    window.location = "/api/records/export?" + p.toString();
+  }
+
+  $("#btn-reset").addEventListener("click", function () {
+    $("#q").value = ""; $("#date").value = ""; $("#person").value = "";
+    $("#status").value = "";
+    state.offset = 0;
+    loadRecords();
+  });
+  $("#btn-export").addEventListener("click", exportCsv);
+  $("#page-prev").addEventListener("click", () => {
+    state.offset = Math.max(0, state.offset - state.limit);
+    loadRecords();
+  });
+  $("#page-next").addEventListener("click", () => {
+    state.offset += state.limit;
+    loadRecords();
+  });
+  $("#q").addEventListener("input", debounce(loadRecords, 350));
+  $("#date").addEventListener("change", () => { state.offset = 0; loadRecords(); });
+  $("#person").addEventListener("change", () => { state.offset = 0; loadRecords(); });
+  $("#status").addEventListener("change", () => { state.offset = 0; loadRecords(); });
+
+  function debounce(fn, ms) {
+    let t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    loadMeta();
+    loadRecords();
+  });
+</script>
+{% endblock %}

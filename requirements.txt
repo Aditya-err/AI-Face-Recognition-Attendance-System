@@ -1,0 +1,18 @@
+# Core computer vision + recognition pipeline
+# opencv-contrib-python includes the standard OpenCV modules AND the extra
+# "contrib" modules (cv2.FaceDetectorYN, cv2.FaceRecognizerSF) that this
+# project needs.  Install it INSTEAD of opencv-python (they conflict).
+opencv-contrib-python>=4.9,<5
+
+# Numerical arrays (cv2 requires a compatible numpy)
+numpy>=1.26
+
+# Web framework (pages + JSON API + MJPEG streaming)
+flask>=3.0
+
+# Optional: reads .env files (the app works without it if you use real env vars)
+python-dotenv>=1.0
+
+# Optional: production WSGI server, recommended on Windows.
+# If not installed, the app falls back to Flask's threaded dev server.
+waitress>=3.0

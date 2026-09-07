@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p>Recognition behaviour, attendance rules and camera configuration.</p>
+  </div>
+</div>
+
+<div id="alert-zone"></div>
+
+<!-- system status -->
+<div class="card" style="margin-bottom:14px">
+  <h3>System status</h3>
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center">
+    <span class="badge gray" id="sys-camera">Camera: ...</span>
+    <span class="badge gray" id="sys-models">Models: ...</span>
+    <span class="badge gray" id="sys-fps">FPS: -</span>
+    <button class="btn small" id="sys-restart" type="button">Restart camera</button>
+  </div>
+  <p class="hint" id="sys-models-hint" style="margin:10px 0 0"></p>
+</div>
+
+<div id="groups"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Declarative settings groups -> rendered from /api/settings values.
+  const GROUPS = [
+    {
+      title: "Recognition",
+      hint: "Similarity is 0..1 (1 = identical face). Higher thresholds mean fewer false positives but may miss people in bad light.",
+      keys: [
+        { k: "similarity_threshold", label: "Match threshold",
+          hint: "Similarity at or above this is a recognized person.",
+          type: "range", min: 0, max: 1, step: 0.01 },
+        { k: "uncertain_threshold", label: "Uncertainty floor",
+          hint: "Below this similarity the face is treated as unknown. Between the two thresholds the match is shown as low confidence and never marks attendance.",
+          type: "range", min: 0, max: 1, step: 0.01 },
+        { k: "confirm_frames", label: "Confirmations required",
+          hint: "Consecutive agreeing recognition checks before attendance is recorded.",
+          type: "int", min: 1, max: 10 },
+        { k: "recognition_interval_seconds", label: "Check interval (seconds)",
+          hint: "How often embeddings are computed while a face is present.",
+          type: "float", min: 0.15, max: 5, step: 0.05 },
+      ],
+    },
+    {
+      title: "Attendance rules",
+      hint: "How often a person can be marked present.",
+      keys: [
+        { k: "attendance_mode", label: "Attendance period", type: "select",
+          options: [["once_per_day", "Once per day"], ["cooldown", "Cooldown window"]] },
+        { k: "cooldown_minutes", label: "Cooldown window (minutes)",
+          hint: "Used when the period is 'Cooldown window'.",
+          type: "int", min: 1, max: 1440 },
+      ],
+    },
+    {
+      title: "Registration quality",
+      hint: "Validation rules applied to every captured face sample.",
+      keys: [
+        { k: "registration_samples", label: "Samples per registration",
+          type: "int", min: 3, max: 10 },
+        { k: "min_face_width", label: "Minimum face width (px)",
+          hint: "Faces smaller than this are rejected as too far away.",
+          type: "int", min: 50, max: 300 },
+        { k: "min_sharpness", label: "Minimum sharpness",
+          hint: "Blurry samples below this value are rejected.",
+          type: "float", min: 1, max: 500 },
+        { k: "max_embeddings_per_person", label: "Max samples per person",
+          type: "int", min: 1, max: 100 },
+      ],
+    },
+    {
+      title: "Camera",
+      hint: "Changes apply after the camera is restarted.",
+      keys: [
+        { k: "camera_index", label: "Camera index", type: "int", min: 0, max: 9 },
+        { k: "camera_width", label: "Capture width (px)", type: "int", min: 320, max: 1280 },
+        { k: "camera_height", label: "Capture height (px)", type: "int", min: 240, max: 720 },
+        { k: "process_fps", label: "Processing frame rate", type: "int", min: 2, max: 30 },
+      ],
+    },
+  ];
+
+  function renderGroups(settings) {
+    const host = $("#groups");
+    host.innerHTML = "";
+    for (const g of GROUPS) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<h3>${esc(g.title)}</h3><p class="hint">${esc(g.hint)}</p>`;
+      const grid = document.createElement("div");
+      grid.className = "form-grid";
+      for (const spec of g.keys) {
+        const value = settings[spec.k];
+        let control = "";
+        if (spec.type === "range") {
+          control = `<div class="range-row">
+            <input type="range" name="${spec.k}" min="${spec.min}" max="${spec.max}"
+                   step="${spec.step}" value="${value}">
+            <output>${Number(value).toFixed(2)}</output></div>`;
+        } else if (spec.type === "select") {
+          control = `<select name="${spec.k}">` +
+            spec.options.map(([v, label]) =>
+              `<option value="${v}" ${String(v) === String(value) ? "selected" : ""}>${esc(label)}</option>`).join("") +
+            `</select>`;
+        } else {
+          control = `<input type="number" name="${spec.k}" min="${spec.min}"
+            max="${spec.max}" step="${spec.type === "float" ? "0.01" : "1"}" value="${value}">`;
+        }
+        grid.insertAdjacentHTML("beforeend",
+          `<div class="field"><label>${esc(spec.label)}</label>${control}
+           ${spec.hint ? `<div class="sub">${esc(spec.hint)}</div>` : ""}</div>`);
+      }
+      card.appendChild(grid);
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "btn primary";
+      save.textContent = "Save " + g.title;
+      save.addEventListener("click", () => saveGroup(g, save));
+      card.appendChild(save);
+      host.appendChild(card);
+    }
+    // range output syncing
+    $$("input[type=range]").forEach(r => r.addEventListener("input", () => {
+      r.nextElementSibling.textContent = Number(r.value).toFixed(2);
+    }));
+  }
+
+  async function saveGroup(group, btn) {
+    const updates = {};
+    group.keys.forEach(spec => {
+      const el = document.querySelector(`[name="${spec.k}"]`);
+      updates[spec.k] = spec.type === "int" ? parseInt(el.value, 10)
+        : spec.type === "float" || spec.type === "range" ? parseFloat(el.value)
+        : el.value;
+    });
+    // cross-field guard: the uncertainty floor must stay below the match threshold
+    if (updates.uncertain_threshold != null && updates.similarity_threshold != null
+        && updates.uncertain_threshold > updates.similarity_threshold) {
+      toast("Uncertainty floor must be below the match threshold.", "error");
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const res = await fetchJSON("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
+      toast("Saved.", "success");
+    } catch (e) {
+      const first = e.data && e.data.errors
+        ? Object.values(e.data.errors)[0] : e.message;
+      toast(first, "error");
+    }
+    btn.disabled = false;
+  }
+
+  let rendered = false;
+  async function refresh() {
+    try {
+      const data = await fetchJSON("/api/settings");
+      if (!rendered) {
+        renderGroups(data.settings);
+        rendered = true;
+      }
+      const cam = data.camera;
+      const c = $("#sys-camera");
+      c.className = "badge " + (cam.state === "running" ? "green"
+        : cam.state === "error" ? "red" : "gray");
+      c.textContent = "Camera: " + cam.state + (cam.error ? " - " + cam.error : "");
+      $("#sys-fps").textContent = "FPS: " + cam.fps;
+      const m = $("#sys-models");
+      m.className = "badge " + (data.models_available ? "green" : "red");
+      m.textContent = "Face models: " + (data.models_available ? "installed" : "missing");
+      $("#sys-models-hint").textContent = data.models_available
+        ? ""
+        : "Run `python download_models.py` in the project folder, then click 'Restart camera'.";
+    } catch (e) { toast(e.message, "error"); }
+  }
+
+  $("#sys-restart").addEventListener("click", async function (btn) {
+    btn.disabled = true;
+    try {
+      await fetchJSON("/api/camera/restart", { method: "POST" });
+      toast("Camera restarting...", "success");
+    } catch (e) { toast(e.message, "error"); }
+    btn.disabled = false;
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    refresh();
+    setInterval(refresh, 6000);
+  });
+</script>
+{% endblock %}

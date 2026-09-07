@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Register Face{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Face Registration</h1>
+    <p>Register a person once; recognition works afterwards with no retraining.</p>
+  </div>
+  <div>
+    <span class="badge gray" id="cam-state">Camera: ...</span>
+  </div>
+</div>
+
+<div class="alert info" id="intro-alert">
+  <div>
+    Start a registration, then add several face samples. Keep your face in the
+    camera and reasonably still while samples are taken. Samples are validated
+    for face presence, size and sharpness before they are accepted.
+  </div>
+</div>
+
+<div class="alert hidden" id="msg"></div>
+
+<div class="split">
+  <div class="card">
+    <div class="feed-wrap">
+      <img class="feed" id="feed" src="{{ url_for('video_feed') }}" alt="Live camera">
+    </div>
+    <div class="feed-bar">
+      <div class="legend" id="session-label">No active registration session.</div>
+    </div>
+  </div>
+
+  <div>
+    <!-- Step 1: details -->
+    <div class="card" id="step-details">
+      <h3>1. Person details</h3>
+      <div class="seg" id="mode-seg">
+        <button type="button" data-mode="new" class="on">New person</button>
+        <button type="button" data-mode="existing">Re-enrol existing</button>
+      </div>
+
+      <div id="fields-new">
+        <div class="field">
+          <label for="f-name">Full name</label>
+          <input type="text" id="f-name" placeholder="e.g. Maria Santos" maxlength="100" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-code">Person ID (employee / student ID)</label>
+          <input type="text" id="f-code" placeholder="e.g. EMP-1042" maxlength="40" autocomplete="off">
+        </div>
+      </div>
+
+      <div id="fields-existing" class="hidden">
+        <div class="field">
+          <label for="f-person">Registered person</label>
+          <select id="f-person"><option value="">Loading people...</option></select>
+        </div>
+      </div>
+
+      <button class="btn primary block" id="btn-start" type="button">Start registration</button>
+    </div>
+
+    <!-- Step 2: capture -->
+    <div class="card hidden" id="step-capture">
+      <h3>2. Capture face samples</h3>
+      <div class="field">
+        <div class="sub" id="capture-label">-</div>
+        <div class="progress"><div id="progress-bar"></div></div>
+      </div>
+      <button class="btn primary block" id="btn-sample" type="button">+ Add sample</button>
+      <div class="field" style="margin-top:10px">
+        <button class="btn block" id="btn-finish" type="button" disabled>Save registration</button>
+        <p class="sub" id="finish-hint" style="margin-top:6px">Add at least 3 samples to save.</p>
+      </div>
+      <button class="btn ghost small" id="btn-cancel" type="button">Cancel registration</button>
+    </div>
+  </div>
+</div>
+
+<!-- duplicate face confirmation -->
+<div class="backdrop hidden" id="dup-modal">
+  <div class="modal">
+    <h3>Face already registered?</h3>
+    <p id="dup-text"></p>
+    <div class="actions">
+      <button class="btn" id="dup-no" type="button">Cancel</button>
+      <button class="btn danger" id="dup-yes" type="button">Register anyway</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let mode = "new";
+  let target = 5;
+  const MIN_SAMPLES = 3;
+
+  const feed = $("#feed");
+  feed.addEventListener("error", () => {
+    setTimeout(() => { feed.src = feed.src.split("?")[0] + "?t=" + Date.now(); }, 1500);
+  });
+
+  function showMsg(text, kind) {
+    const m = $("#msg");
+    m.className = "alert " + (kind || "info");
+    m.textContent = text;
+    m.classList.remove("hidden");
+  }
+  function hideMsg() { $("#msg").classList.add("hidden"); }
+
+  function setMode(newMode) {
+    mode = newMode;
+    $$("#mode-seg button").forEach(b =>
+      b.classList.toggle("on", b.dataset.mode === mode));
+    $("#fields-new").classList.toggle("hidden", mode !== "new");
+    $("#fields-existing").classList.toggle("hidden", mode !== "existing");
+    if (mode === "existing" && $("#f-person").options.length <= 1) loadPeople();
+  }
+
+  async function loadPeople() {
+    try {
+      const data = await fetchJSON("/api/people");
+      const sel = $("#f-person");
+      sel.innerHTML = '<option value="">Choose a person...</option>';
+      for (const p of data.people) {
+        const opt = document.createElement("option");
+        opt.value = p.code;
+        opt.textContent = p.name + " (" + p.code + ")";
+        sel.appendChild(opt);
+      }
+      const qs = new URLSearchParams(location.search);
+      if (qs.get("mode") === "existing") setMode("existing");
+      if (qs.get("person")) sel.value = qs.get("person");
+    } catch (e) { toast(e.message, "error"); }
+  }
+
+  async function refreshCamera() {
+    try {
+      const cam = await fetchJSON("/api/camera/status");
+      const chip = $("#cam-state");
+      chip.className = "badge " + (cam.state === "running" ? "green"
+        : cam.state === "error" ? "red" : "gray");
+      chip.textContent = "Camera: " + cam.state;
+    } catch (e) { /* ignore */ }
+  }
+
+  function enterCapture(session) {
+    target = session.target || 5;
+    $("#step-details").classList.add("hidden");
+    $("#step-capture").classList.remove("hidden");
+    $("#intro-alert").classList.add("hidden");
+    const modeTxt = session.mode === "existing" ? "RE-ENROL" : "REGISTER";
+    const who = session.name + (session.code ? " (" + session.code + ")" : "");
+    $("#capture-label").textContent = modeTxt + ": " + who;
+    updateProgress(session.sample_count || 0);
+    hideMsg();
+  }
+
+  function updateProgress(count) {
+    count = count || 0;
+    $("#progress-bar").style.width = Math.min(100, count / target * 100) + "%";
+    const done = count >= MIN_SAMPLES;
+    $("#btn-finish").disabled = !done;
+    $("#finish-hint").textContent = done
+      ? (count >= target ? "Ready to save." : "Enough samples captured. Add more for extra robustness, or save now.")
+      : "Add at least " + MIN_SAMPLES + " samples to save.";
+    $("#capture-label").textContent = $("#capture-label").textContent
+      .replace(/\s*\|\s*samples.*$/, "") + "  |  samples " + count + "/" + target;
+  }
+
+  async function startSession() {
+    hideMsg();
+    const payload = { mode };
+    if (mode === "new") {
+      payload.name = $("#f-name").value.trim();
+      payload.code = $("#f-code").value.trim();
+    } else {
+      payload.code = $("#f-person").value;
+      if (!payload.code) { showMsg("Choose a person to re-enrol.", "error"); return; }
+    }
+    try {
+      const data = await fetchJSON("/api/register/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      enterCapture(data.session);
+    } catch (e) {
+      showMsg(e.message, "error");
+      if (e.status === 409 && e.data && e.data.code === "duplicate_code") {
+        // offer to re-enrol that person instead
+        toast("Switch to 'Re-enrol existing' to add samples to that person.",
+              "info");
+      }
+    }
+  }
+
+  async function addSample(btn) {
+    btn.disabled = true;
+    hideMsg();
+    try {
+      const data = await fetchJSON("/api/register/capture", { method: "POST" });
+      if (data.ok) {
+        updateProgress(data.session.sample_count);
+        if (data.session.sample_count >= target) {
+          showMsg("Target samples reached - you can save the registration.",
+                  "success");
+        }
+      } else {
+        const kind = ["no_face", "no_camera", "no_models"].includes(data.code)
+          ? "info" : "warn";
+        showMsg(data.message, kind);
+      }
+    } catch (e) {
+      showMsg(e.message, "error");
+    }
+    btn.disabled = false;
+  }
+
+  async function finishSession(force) {
+    hideMsg();
+    try {
+      const data = await fetchJSON("/api/register/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: !!force }),
+      });
+      toast(data.message, "success");
+      showMsg(data.message, "success");
+      resetAll();
+    } catch (e) {
+      if (e.status === 409 && e.data && e.data.code === "duplicate_face") {
+        $("#dup-text").textContent = e.message;
+        $("#dup-modal").classList.remove("hidden");
+      } else {
+        showMsg(e.message, "error");
+      }
+    }
+  }
+
+  function resetAll() {
+    $("#step-capture").classList.add("hidden");
+    $("#step-details").classList.remove("hidden");
+    $("#intro-alert").classList.remove("hidden");
+    $("#session-label").textContent = "No active registration session.";
+    $("#progress-bar").style.width = "0%";
+  }
+
+  async function cancelSession() {
+    try { await fetchJSON("/api/register/cancel", { method: "POST" }); }
+    catch (e) { /* ignore */ }
+    resetAll();
+  }
+
+  // Wire up ------------------------------------------------------------
+  $("#btn-start").addEventListener("click", startSession);
+  $("#btn-sample").addEventListener("click", (e) => addSample(e.target));
+  $("#btn-finish").addEventListener("click", () => finishSession(false));
+  $("#btn-cancel").addEventListener("click", cancelSession);
+  $("#dup-no").addEventListener("click",
+    () => $("#dup-modal").classList.add("hidden"));
+  $("#dup-yes").addEventListener("click", () => {
+    $("#dup-modal").classList.add("hidden");
+    finishSession(true);
+  });
+  $$("#mode-seg button").forEach(b =>
+    b.addEventListener("click", () => setMode(b.dataset.mode)));
+
+  // If the server still has a session (e.g. after a page refresh), resume it.
+  document.addEventListener("DOMContentLoaded", async function () {
+    loadPeople();
+    refreshCamera();
+    setInterval(refreshCamera, 4000);
+    try {
+      const data = await fetchJSON("/api/register/session");
+      if (data.session) enterCapture(data.session);
+    } catch (e) { /* ignore */ }
+  });
+</script>
+{% endblock %}

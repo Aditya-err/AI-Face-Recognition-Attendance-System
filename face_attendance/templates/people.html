@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}People{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Registered People</h1>
+    <p>Everyone enrolled in the recognition system.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn primary" href="{{ url_for('register_page') }}">+ Register new person</a>
+  </div>
+</div>
+
+<div id="alert-zone"></div>
+<div class="person-grid" id="people-grid"></div>
+<div class="empty hidden" id="people-empty">
+  <span class="big">&#128100;</span>
+  Nobody is registered yet.<br>
+  <a href="{{ url_for('register_page') }}">Register the first person</a> to start.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const people = new Map();
+
+  function card(p, presentToday) {
+    const since = p.last_seen
+      ? `<div class="meta">Last seen ${esc(dateStr(p.last_seen))} at
+           ${esc(timeStr(p.last_seen))}</div>`
+      : '<div class="meta">Never seen</div>';
+    const status = presentToday
+      ? '<span class="badge green">Present today</span>'
+      : '<span class="badge gray">Not marked today</span>';
+    return `
+      <div class="person-card" data-id="${p.id}">
+        <div class="row" style="justify-content:space-between;margin-top:0">
+          <div>
+            <div class="nm">${esc(p.name)}</div>
+            <div class="id">${esc(p.code)}</div>
+          </div>
+          ${status}
+        </div>
+        ${since}
+        <div class="meta">Registered ${esc(p.created_at.replace("T", " ").slice(0, 16))}
+          &middot; ${p.sample_count} face sample${p.sample_count === 1 ? "" : "s"}</div>
+        <div class="row">
+          <a class="btn small" href="/register?mode=existing&person=${encodeURIComponent(p.code)}">+ Add samples</a>
+          <button class="icon-btn danger" title="Delete person" data-del="${p.id}">&#128465;</button>
+        </div>
+      </div>`;
+  }
+
+  async function load() {
+    try {
+      const data = await fetchJSON("/api/people");
+      const dash = await fetchJSON("/api/dashboard");
+      const today = new Set(dash.recent_attendance.map(r => r.person_id));
+      const grid = $("#people-grid");
+      grid.innerHTML = "";
+      people.clear();
+      if (!data.people.length) {
+        $("#people-empty").classList.remove("hidden");
+        return;
+      }
+      $("#people-empty").classList.add("hidden");
+      for (const p of data.people) {
+        people.set(p.id, p);
+        grid.insertAdjacentHTML("beforeend", card(p, today.has(p.id)));
+      }
+    } catch (e) { toast(e.message, "error"); }
+  }
+
+  document.addEventListener("click", async function (ev) {
+    const btn = ev.target.closest("[data-del]");
+    if (!btn) return;
+    const id = Number(btn.dataset.del);
+    const p = people.get(id);
+    if (!p) return;
+    if (!confirm(`Delete ${p.name} (${p.code})?\n\nTheir face data will be removed. Attendance history is kept.`)) return;
+    try {
+      const res = await fetchJSON("/api/people/" + id, { method: "DELETE" });
+      toast(res.message, "success");
+      load();
+    } catch (e) { toast(e.message, "error"); }
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    load();
+    setInterval(load, 8000);
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Live Recognition{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Live Recognition</h1>
+    <p>Point the camera at a registered person to mark attendance automatically.</p>
+  </div>
+  <div class="page-actions">
+    <span class="badge gray" id="cam-state">Camera: ...</span>
+    <span class="badge info" id="present-today">Present today: -</span>
+  </div>
+</div>
+
+<div class="split">
+  <div class="card">
+    <div class="feed-wrap">
+      <img class="feed" id="feed" src="{{ url_for('video_feed') }}" alt="Live camera">
+    </div>
+    <div class="feed-bar">
+      <div class="legend">
+        <span><span class="sw" style="background:#3cc878"></span>Recognized</span>
+        <span><span class="sw" style="background:#f0a83c"></span>Low confidence</span>
+        <span><span class="sw" style="background:#e64646"></span>Unknown</span>
+        <span><span class="sw" style="background:#96a0b4"></span>Detecting</span>
+      </div>
+      <button class="btn small" id="btn-reload" type="button">Reconnect camera</button>
+    </div>
+    <p class="hint" style="margin-bottom:0">
+      Attendance is recorded only after a person is confidently recognized in
+      several consecutive checks - a single glimpse of an unknown face never
+      marks attendance. Once marked, a person is not recorded again the same
+      day (changeable in Settings).
+    </p>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>Recent activity</h3>
+      <ul class="feed-list" id="activity-list" style="min-height:120px"></ul>
+      <div class="empty hidden" id="activity-empty">Waiting for recognition
+        activity...</div>
+    </div>
+    <div class="card">
+      <h3>How it works</h3>
+      <p class="hint" style="margin:0 0 6px">
+        1. Faces are detected in every processed frame (fast).<br>
+        2. Face embeddings are extracted only when needed - never on every frame.<br>
+        3. Embeddings are compared to every registered person's stored embeddings.<br>
+        4. A green match records attendance; amber means "uncertain"; red is unknown.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const feed = $("#feed");
+
+  // Keep the <img> stream alive: browsers stop retrying broken MJPEG streams.
+  feed.addEventListener("error", function () {
+    setTimeout(() => { feed.src = feed.src.split("?")[0] + "?t=" + Date.now(); },
+      1500);
+  });
+
+  async function refresh() {
+    try {
+      const cam = await fetchJSON("/api/camera/status");
+      const chip = $("#cam-state");
+      chip.className = "badge " + (cam.state === "running" ? "green"
+        : cam.state === "error" ? "red" : "gray");
+      chip.textContent = "Camera: " + cam.state +
+        (cam.error ? " (" + cam.error + ")" : "");
+      if (cam.state === "running") feed.classList.remove("off");
+      else feed.classList.add("off");
+
+      const dash = await fetchJSON("/api/dashboard");
+      $("#present-today").textContent = "Present today: " + dash.present_today;
+
+      const act = await fetchJSON("/api/activity?limit=12");
+      const list = $("#activity-list");
+      list.innerHTML = "";
+      if (act.activity.length) {
+        $("#activity-empty").classList.add("hidden");
+        for (const a of act.activity) {
+          const who = a.person_name ? esc(a.person_name) : "Unknown person";
+          const conf = a.confidence != null
+            ? ` <span class="muted">(${Math.round(a.confidence * 100)}%)</span>` : "";
+          list.insertAdjacentHTML("beforeend",
+            `<li><span class="t">${esc(timeStr(a.timestamp))}</span>
+             <span class="grow">${who}${conf}</span>${badgeForKind(a.kind)}</li>`);
+        }
+      } else {
+        $("#activity-empty").classList.remove("hidden");
+      }
+    } catch (e) { /* ignore transient errors */ }
+  }
+
+  $("#btn-reload").addEventListener("click", async function (btn) {
+    btn.disabled = true;
+    try {
+      await fetchJSON("/api/camera/restart", { method: "POST" });
+      toast("Camera restarted", "success");
+    } catch (e) { toast(e.message, "error"); }
+    btn.disabled = false;
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    refresh();
+    setInterval(refresh, 4000);
+  });
+</script>
+{% endblock %}

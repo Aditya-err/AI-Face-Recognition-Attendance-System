@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Face Attendance{% endblock %} - AI Face Attendance</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='sans-serif'%3E%F0%9F%91%A4%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logo">&#128100;</span>
+      <span>AI Face Attendance<small>recognition system</small></span>
+    </div>
+
+    <a class="nav-item {{ 'active' if active == 'dashboard' }}"
+       href="{{ url_for('dashboard_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      Dashboard
+    </a>
+    <a class="nav-item {{ 'active' if active == 'recognize' }}"
+       href="{{ url_for('recognize_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/></svg>
+      Live Recognition
+    </a>
+    <a class="nav-item {{ 'active' if active == 'register' }}"
+       href="{{ url_for('register_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><path d="M17 8h4M19 6v4"/></svg>
+      Register Face
+    </a>
+    <a class="nav-item {{ 'active' if active == 'people' }}"
+       href="{{ url_for('people_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 15.4c3 .3 5 1.9 5.5 4.6"/></svg>
+      People
+    </a>
+    <a class="nav-item {{ 'active' if active == 'records' }}"
+       href="{{ url_for('records_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>
+      Attendance Records
+    </a>
+    <a class="nav-item {{ 'active' if active == 'settings' }}"
+       href="{{ url_for('settings_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.4"/><circle cx="8" cy="16" r="2.4"/></svg>
+      Settings
+    </a>
+
+    <div class="nav-foot">
+      <div class="chip-row" id="nav-cam"><span class="dot"></span>Camera: ...</div>
+      <div class="chip-row" id="nav-models"><span class="dot"></span>Models: ...</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<div id="toasts"></div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    refreshNavStatus();
+    setInterval(refreshNavStatus, 4000);
+  });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

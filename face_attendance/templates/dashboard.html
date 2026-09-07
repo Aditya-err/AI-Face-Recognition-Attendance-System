@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p>Attendance overview for today.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn primary" href="{{ url_for('register_page') }}">Register a face</a>
+    <a class="btn" href="{{ url_for('recognize_page') }}">Start recognition</a>
+  </div>
+</div>
+
+<div class="grid-stats">
+  <div class="stat-card">
+    <div class="label">Registered people</div>
+    <div class="value" id="stat-registered">-</div>
+    <div class="sub" id="stat-date">today</div>
+  </div>
+  <div class="stat-card green">
+    <div class="label">Present today</div>
+    <div class="value" id="stat-present">-</div>
+    <div class="sub">marked present</div>
+  </div>
+  <div class="stat-card red">
+    <div class="label">Absent today</div>
+    <div class="value" id="stat-absent">-</div>
+    <div class="sub">not yet marked</div>
+  </div>
+  <div class="stat-card accent">
+    <div class="label">Attendance rate</div>
+    <div class="value" id="stat-rate">-</div>
+    <div class="sub">present / registered</div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="card">
+    <h2>Today's attendance</h2>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Name</th><th>ID</th><th>Time</th><th>Status</th></tr></thead>
+        <tbody id="today-body"></tbody>
+      </table>
+    </div>
+    <div class="empty hidden" id="today-empty">No attendance recorded yet today.
+      Open <a href="{{ url_for('recognize_page') }}">Live Recognition</a> to mark
+      people present.</div>
+    <p style="margin:12px 0 0"><a href="{{ url_for('records_page') }}">View all
+      records &rarr;</a></p>
+  </div>
+
+  <div class="card">
+    <h2>Recognition activity</h2>
+    <ul class="feed-list" id="activity-list"></ul>
+    <div class="empty hidden" id="activity-empty">No recognition activity yet.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function loadDashboard() {
+    try {
+      const d = await fetchJSON("/api/dashboard");
+      $("#stat-registered").textContent = d.registered;
+      $("#stat-present").textContent = d.present_today;
+      $("#stat-absent").textContent = d.absent_today;
+      $("#stat-rate").textContent = d.attendance_rate + "%";
+      $("#stat-date").textContent = d.date;
+
+      const body = $("#today-body");
+      body.innerHTML = "";
+      if (d.recent_attendance.length) {
+        $("#today-empty").classList.add("hidden");
+        for (const r of d.recent_attendance) {
+          body.insertAdjacentHTML("beforeend",
+            `<tr><td>${esc(r.name)}</td><td class="muted">${esc(r.code)}</td>
+             <td class="mono">${esc(timeStr(r.timestamp))}</td>
+             <td><span class="badge green">Present</span></td></tr>`);
+        }
+      } else {
+        $("#today-empty").classList.remove("hidden");
+      }
+
+      const list = $("#activity-list");
+      list.innerHTML = "";
+      if (d.activity.length) {
+        $("#activity-empty").classList.add("hidden");
+        for (const a of d.activity) {
+          const who = a.person_name ? esc(a.person_name) : "Unknown person";
+          const conf = a.confidence != null
+            ? ` <span class="muted">(${Math.round(a.confidence * 100)}%)</span>` : "";
+          list.insertAdjacentHTML("beforeend",
+            `<li><span class="t">${esc(timeStr(a.timestamp))}</span>
+             <span class="grow">${who}${conf}</span>${badgeForKind(a.kind)}</li>`);
+        }
+      } else {
+        $("#activity-empty").classList.remove("hidden");
+      }
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    loadDashboard();
+    setInterval(loadDashboard, 5000);
+  });
+</script>
+{% endblock %}
