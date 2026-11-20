@@ -27,14 +27,20 @@ models/*.prototxt
 models/*.onnx
 models/*.bin
 
-# ─── Privacy: no face images should ever be committed ─────────────────────────
+# ─── Privacy: no raw training face datasets should be committed ─────────────
 *.jpg
 *.jpeg
 *.png
 *.bmp
 *.webp
 
-# ─── IDE / tooling ───────────────────────────────────────────────────────────
+# Whitelist UI screenshots for portfolio/README and test fixtures
+!Screenshots/
+!Screenshots/*
+!tests/assets/*.jpg
+
+# ─── IDE / tooling / caches ───────────────────────────────────────────────────
+.freebuff/
 .vscode/
 .idea/
 *.swp
