@@ -46,3 +46,9 @@ models/*.bin
 *.swp
 .pytest_cache/
 .ruff_cache/
+
+# ─── Internal study & preparation notes (keep local only) ─────────────────────
+interview_guide.md
+RESUME_PORTFOLIO.md
+*interview*
+*RESUME*

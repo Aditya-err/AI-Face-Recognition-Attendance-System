@@ -215,8 +215,6 @@ For headless setups, laboratory demonstrations, or quick script testing:
 ├── verify_all.py              # Automated hardware, pipeline & DB diagnostics
 ├── download_models.py         # Automated ONNX model downloader from OpenCV zoo
 ├── requirements.txt           # Dependency specifications
-├── RESUME_PORTFOLIO.md        # Tailored CV bullet points & portfolio pitch
-├── interview_guide.md         # Comprehensive Technical Interview Master Manual
 ├── models/                    # ONNX neural network model weights
 │   ├── face_detection_yunet_2023mar.onnx
 │   └── face_recognition_sface_2021dec.onnx
